@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>1:45 AM — Horror Short</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:system-ui,sans-serif;color:#ddd}
+  #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+  #out{height:min(100vh,calc(100vw*16/9));aspect-ratio:9/16;background:#000}
+  #menu{position:fixed;inset:0;display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;background:rgba(0,0,0,.85);z-index:5;text-align:center;padding:20px}
+  h1{margin:0;font-size:44px;color:#ff2a1a;letter-spacing:4px;text-shadow:0 0 18px #f00}
+  button{font-size:18px;padding:12px 26px;border:1px solid #ff2a1a;background:#160000;color:#fff;cursor:pointer;border-radius:6px}
+  button:hover{background:#ff2a1a}
+  label{font-size:14px;opacity:.8}
+  small{opacity:.55;max-width:420px}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="out" width="1080" height="1920"></canvas></div>
+<div id="menu">
+  <h1>1:45 AM</h1>
+  <div>60-second horror short · 9:16</div>
+  <button id="bPlay">▶ Play</button>
+  <button id="bRec">⏺ Play &amp; Record (.webm)</button>
+  <label><input type="checkbox" id="useVoice" checked> Voice narration (browser text-to-speech)</label>
+  <small>Use headphones. Recording captures video + sound effects/music. The TTS voice is NOT captured in the file (see notes).</small>
+</div>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+
+/* ============ CONFIG ============ */
+const W=1080,H=1920,DURATION=60;
+const GAIN=1.3;                       // overall brightness (raise if too dark)
+const out=document.getElementById('out'), ctx=out.getContext('2d');
+const menu=document.getElementById('menu'), useVoice=document.getElementById('useVoice');
+
+/* ============ HELPERS ============ */
+const lerp=(a,b,u)=>a+(b-a)*u;
+const seg=(t,a,b)=>Math.min(1,Math.max(0,(t-a)/(b-a)));
+const ease=u=>u<.5?2*u*u:1-Math.pow(-2*u+2,2)/2;
+const hash=n=>{const s=Math.sin(n*127.1)*43758.5453;return s-Math.floor(s);};
+const V=(x,y,z)=>new THREE.Vector3(x,y,z);
+const vl=(a,b,u)=>a.clone().lerp(b,u);
+
+/* ============ THREE SETUP ============ */
+const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});
+renderer.setSize(720,1280,false);
+renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.1;
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x020406);
+scene.fog=new THREE.FogExp2(0x04080b,0.04);
+const camera=new THREE.PerspectiveCamera(40,9/16,0.03,60);
+
+const std=(c,r=.9,m=0)=>new THREE.MeshStandardMaterial({color:c,roughness:r,metalness:m,side:THREE.DoubleSide});
+const basic=c=>new THREE.MeshBasicMaterial({color:c});
+function box(w,h,d,mat,x,y,z,parent=scene){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);parent.add(m);return m;}
+function plane(w,h,mat,x,y,z,rx=0,ry=0){const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),mat);m.position.set(x,y,z);m.rotation.set(rx,ry,0);scene.add(m);return m;}
+
+/* ---------- Rooms ---------- */
+const wallM=std(0x6f7882,.95), floorM=std(0x3a3128,.8), ceilM=std(0x59606a,1);
+// bedroom
+plane(5,5,floorM,0,0,.5,-Math.PI/2); plane(5,5,ceilM,0,2.5,.5,Math.PI/2);
+plane(5,2.5,wallM,0,1.25,3); plane(5,2.5,wallM,-2.5,1.25,.5,0,Math.PI/2); plane(5,2.5,wallM,2.5,1.25,.5,0,-Math.PI/2);
+plane(2.05,2.5,wallM,-1.475,1.25,-2); plane(2.05,2.5,wallM,1.475,1.25,-2); plane(.9,.4,wallM,0,2.3,-2);
+// hallway
+plane(1.8,10,floorM,0,0,-7,-Math.PI/2); plane(1.8,10,ceilM,0,2.5,-7,Math.PI/2);
+plane(10,2.5,wallM,-.9,1.25,-7,0,Math.PI/2); plane(10,2.5,wallM,.9,1.25,-7,0,-Math.PI/2);
+// kitchen
+const kFloor=std(0x6a665c,.5), kWall=std(0x9c9a86,.9);
+plane(4.4,5,kFloor,0,0,-14.5,-Math.PI/2); plane(4.4,5,ceilM,0,2.5,-14.5,Math.PI/2);
+plane(4.4,2.5,kWall,0,1.25,-17); plane(5,2.5,kWall,-2.2,1.25,-14.5,0,Math.PI/2); plane(5,2.5,kWall,2.2,1.25,-14.5,0,-Math.PI/2);
+plane(1.3,2.5,kWall,-1.55,1.25,-12); plane(1.3,2.5,kWall,1.55,1.25,-12);
+box(.8,1.8,.7,std(0xb8b8b0,.4,.3),1.7,.9,-16.5);
+box(.7,.9,2.8,std(0x3c3a36,.6),-1.85,.45,-14.6);
+const fixM=basic(0xfff2c0); box(.6,.05,.2,fixM,0,2.47,-14.5);
+
+// door
+const doorHinge=new THREE.Group(); doorHinge.position.set(-.45,0,-2); doorHinge.rotation.y=-1.35; scene.add(doorHinge);
+box(.9,2.05,.04,std(0x2a2018,.7),.45,1.025,0,doorHinge);
+
+/* ---------- Bedroom furniture ---------- */
+const skin=std(0xb9a99a,.8);
+box(1.4,.5,2.1,std(0x3d4b5c,1),1.2,.3,1.95);                 // bed
+box(.5,.12,.4,std(0x7c8794,1),1.2,.61,2.25);                 // pillow
+box(1.5,.26,1.2,std(0x2e3b4a,1),1.2,.68,1.0);                // blanket
+box(.4,.6,.4,std(0x2a1e16,.7),.15,.3,2.3);                   // nightstand
+box(.2,.09,.08,std(0x111111,.4),.15,.645,2.3);               // clock body
+// window + blinds
+plane(1.1,1.3,basic(0x1b2b4a),2.49,1.5,.5,0,-Math.PI/2);
+for(let i=0;i<8;i++) box(.03,.04,1.1,std(0x0a0c10),2.47,.95+i*.14,.5);
+
+// clock display
+const cc=document.createElement('canvas'); cc.width=256; cc.height=96; const cx=cc.getContext('2d');
+cx.fillStyle='#120000'; cx.fillRect(0,0,256,96); cx.font='bold 84px "Courier New",monospace';
+cx.textAlign='center'; cx.fillStyle='#ff2a1a'; cx.shadowColor='#f00'; cx.shadowBlur=16; cx.fillText('1:45',128,72);
+const clockTex=new THREE.CanvasTexture(cc); clockTex.colorSpace=THREE.SRGBColorSpace;
+const clockMat=new THREE.MeshBasicMaterial({map:clockTex});
+plane(.17,.065,clockMat,.15,.65,2.258,0,Math.PI);
+
+/* ---------- Heads / people ---------- */
+function makeHead({pale=false,wide=false}={}){
+  const g=new THREE.Group();
+  const mat=new THREE.MeshStandardMaterial({color:pale?0xd8d8d0:0xb9a99a,roughness:.7,emissive:pale?0x202428:0x000000});
+  const head=new THREE.Mesh(new THREE.SphereGeometry(.13,24,18),mat); head.scale.set(.92,1.12,1); g.add(head);
+  const eyeM=basic(0xf2f2ea), pupM=basic(0x050505);
+  g.userData.eyes=[];
+  for(const s of[-1,1]){
+    const eg=new THREE.Group(); eg.position.set(s*.045,.025,-.108);
+    eg.add(new THREE.Mesh(new THREE.SphereGeometry(wide?.034:.027,12,10),eyeM));
+    const p=new THREE.Mesh(new THREE.SphereGeometry(wide?.012:.011,8,8),pupM); p.position.z=-(wide?.03:.024); eg.add(p);
+    g.add(eg); g.userData.eyes.push(eg);
+  }
+  if(pale){
+    const mouth=new THREE.Mesh(new THREE.TorusGeometry(.065,.01,6,20,Math.PI),pupM);
+    mouth.rotation.z=Math.PI; mouth.scale.set(1.35,.9,1); mouth.position.set(0,-.04,-.113); g.add(mouth);
+  } else {
+    const hair=new THREE.Mesh(new THREE.SphereGeometry(.137,24,12,0,Math.PI*2,0,Math.PI*.38),std(0x120e0c,1));
+    hair.scale.set(.92,1.12,1); g.add(hair);
+  }
+  return g;
+}
+// Michael (pivot at hips; lying = rotation.x PI/2, sitting = 0)
+const mPivot=new THREE.Group(); mPivot.position.set(1.2,.78,1.3); scene.add(mPivot);
+const torso=new THREE.Mesh(new THREE.CapsuleGeometry(.2,.35,6,12),std(0x2b3440,1)); torso.position.y=.3; mPivot.add(torso);
+const mHead=makeHead(); mHead.position.set(0,.78,0); mPivot.add(mHead);
+const handL=new THREE.Mesh(new THREE.SphereGeometry(.05,10,8),skin), handR=handL.clone(); mPivot.add(handL,handR);
+
+// Silhouette figure
+function makeFigure(){
+  const g=new THREE.Group(), m=new THREE.MeshBasicMaterial({color:0x000000});
+  const add=(geo,x,y,z,parent=g)=>{const me=new THREE.Mesh(geo,m);me.position.set(x,y,z);parent.add(me);return me;};
+  add(new THREE.CapsuleGeometry(.15,.85,4,10),0,1.25,0);
+  add(new THREE.CylinderGeometry(.07,.06,.75,8),-.07,.375,0); add(new THREE.CylinderGeometry(.07,.06,.75,8),.07,.375,0);
+  add(new THREE.CylinderGeometry(.035,.03,1.25,6),-.24,1.1,0); add(new THREE.CylinderGeometry(.035,.03,1.25,6),.24,1.1,0);
+  const head=new THREE.Group(); head.position.set(0,1.98,0); g.add(head);
+  add(new THREE.SphereGeometry(.12,16,12),0,.05,0,head).scale.set(.85,1.3,.9);
+  const eyes=[-1,1].map(s=>{const e=new THREE.Mesh(new THREE.SphereGeometry(.018,8,8),basic(0xffffff));e.position.set(s*.04,.08,-.1);e.visible=false;head.add(e);return e;});
+  scene.add(g); return {g,head,eyes};
+}
+const fig=makeFigure(); fig.g.position.set(0,0,-14.5);
+const shadowFig=makeFigure(); shadowFig.g.position.set(1.2,0,2.85); shadowFig.g.visible=false;
+
+/* ---------- Closet ---------- */
+const cab=std(0x1c1713,.8);
+box(.04,2.1,1.2,cab,-2.48,1.05,1.2); box(.7,.04,1.2,cab,-2.15,2.1,1.2); box(.7,.04,1.2,cab,-2.15,.02,1.2);
+box(.7,2.1,.04,cab,-2.15,1.05,.6); box(.7,2.1,.04,cab,-2.15,1.05,1.8);
+const closetHinge=new THREE.Group(); closetHinge.position.set(-1.8,0,.6); scene.add(closetHinge);
+box(.04,2.1,1.2,std(0x2c2118,.6),0,1.05,.6,closetHinge);
+const cFace=makeHead({pale:true,wide:true}); cFace.scale.setScalar(1.45); cFace.position.set(-2.28,1.6,1.2); cFace.rotation.y=-Math.PI/2; cFace.visible=false; scene.add(cFace);
+const cBody=box(.5,.9,.28,basic(0x050505),-2.3,1.0,1.2); cBody.visible=false;
+
+/* ---------- Phone ---------- */
+const pc=document.createElement('canvas'); pc.width=512; pc.height=1024; const c=pc.getContext('2d');
+const phoneTex=new THREE.CanvasTexture(pc); phoneTex.colorSpace=THREE.SRGBColorSpace;
+const phone=new THREE.Group(); phone.position.set(.7,.82,.9); phone.rotation.y=-.15; phone.scale.setScalar(1.6); scene.add(phone);
+box(.075,.01,.155,std(0x0a0a0c,.3,.5),0,0,0,phone);
+const screenMesh=new THREE.Mesh(new THREE.PlaneGeometry(.068,.143),new THREE.MeshBasicMaterial({map:phoneTex}));
+screenMesh.rotation.x=-Math.PI/2; screenMesh.position.y=.0055; phone.add(screenMesh);
+
+function rr(x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
+function wrapText(text,maxW){const words=text.split(' '),lines=[];let line='';for(const w of words){const test=line?line+' '+w:w;if(c.measureText(test).width>maxW&&line){lines.push(line);line=w;}else line=test;}lines.push(line);return lines;}
+function bubble(text,progress,y){
+  c.font='30px Arial'; const lines=wrapText(text,380); let n=Math.floor(text.length*progress);
+  const h=lines.length*40+34, w=Math.min(430,Math.max(...lines.map(l=>c.measureText(l).width))+44);
+  rr(28,y,w,h,26); c.fillStyle='#1f2b38'; c.fill(); c.fillStyle='#e9f1f8';
+  let yy=y+52; for(const l of lines){c.fillText(l.slice(0,Math.max(0,n)),50,yy);n-=l.length+1;yy+=40;}
+  return y+h+22;
+}
+const MSG1="Whatever happens, don't let the person in the kitchen know you're awake.", MSG2="Michael… I'm in your bedroom.";
+function phoneState(t){
+  if(t>=24&&t<31.4) return {on:1,m1:seg(t,24.6,29.4),typing:0,m2:0};
+  if(t>=45&&t<50.5) return {on:1,m1:1,typing:1,m2:0};
+  if(t>=50.5&&t<58) return {on:1,m1:1,typing:0,m2:1};
+  return {on:0};
+}
+function drawPhone(st,t){
+  c.fillStyle='#05070a'; c.fillRect(0,0,512,1024);
+  if(st.on){
+    c.fillStyle='#10161d'; c.fillRect(0,0,512,150);
+    c.fillStyle='#2b3541'; c.beginPath(); c.arc(60,95,28,0,7); c.fill();
+    c.fillStyle='#e8eef5'; c.font='bold 34px Arial'; c.fillText('Unknown Number',110,92);
+    c.fillStyle='#7d8a99'; c.font='22px Arial'; c.fillText('1:45 AM',110,124);
+    let y=190;
+    y=bubble(MSG1,st.m1,y);
+    if(st.typing){rr(28,y,130,64,32);c.fillStyle='#1f2b38';c.fill();for(let i=0;i<3;i++){c.fillStyle=`rgba(230,240,250,${.3+.7*(.5+.5*Math.sin(t*6-i*1.2))})`;c.beginPath();c.arc(66+i*30,y+32,8,0,7);c.fill();}}
+    if(st.m2) bubble(MSG2,1,y);
+  }
+  phoneTex.needsUpdate=true;
+}
+
+/* ---------- Lights ---------- */
+scene.add(new THREE.AmbientLight(0x6688aa,2.4));
+const moon=new THREE.SpotLight(0x7f9fdf,14,0,.9,1,2); moon.position.set(2.4,1.7,.4); moon.target.position.set(.4,.4,1.8); scene.add(moon,moon.target);
+const clockLight=new THREE.PointLight(0xff2200,.5,3); clockLight.position.set(.15,.8,2.1); scene.add(clockLight);
+const kLight=new THREE.PointLight(0xffe8b0,25,0,2); kLight.position.set(0,2.2,-15.4); scene.add(kLight);
+const phoneLight=new THREE.PointLight(0x9fd0ff,0,3); phoneLight.position.set(.7,1.05,.9); scene.add(phoneLight);
+const closetLight=new THREE.PointLight(0xaac4e0,0,4); closetLight.position.set(-1.6,2.1,1.2); scene.add(closetLight);
+const underLight=new THREE.PointLight(0xbfe8ff,0,1.5); scene.add(underLight);
+
+/* ============ CAMERA SHOTS ============ */
+const cam={p:V(0,1,0),l:V(0,1,1),fov:40,roll:0};
+const setCam=(p,l,fov,roll=0)=>{cam.p.copy(p);cam.l.copy(l);cam.fov=fov;cam.roll=roll;};
+function updateCamera(t){
+  let u;
+  if(t<2.6){ u=ease(seg(t,0,2.6)); setCam(vl(V(-.2,1,0),V(.05,.82,1.5),u),V(.15,.7,2.25),lerp(42,34,u)); }                       // S1 push-in on clock
+  else if(t<4){ const w=ease(seg(t,3.4,3.9)); setCam(vl(V(.05,.82,1.5),V(.55,1.05,1.45),seg(t,2.6,4)),vl(V(.15,.7,2.25),V(1.2,.8,2.08),w),34); } // whip-pan
+  else if(t<10){ u=seg(t,4,10); setCam(vl(V(.95,1.3,1.75),V(1.1,1.05,1.9),ease(u)),V(1.2,.82,2.08),lerp(34,26,u)); }               // S2 face push-in
+  else if(t<17){ u=ease(seg(t,10,17)); const z=lerp(-1,-8.5,u), d=z+14.5;                                                         // S3 DOLLY ZOOM
+    setCam(V(0,1.45,z),V(0,1.3,-14.5),2*Math.atan(2.62/d)*180/Math.PI,u*.05); }
+  else if(t<24){                                                                                                                  // S4 freeze → hands
+    if(t<19) setCam(V(.05,1.25,-.5),V(1.1,1.1,1.3),38);
+    else { u=ease(seg(t,19,24)); setCam(vl(V(.05,1.25,-.5),V(.7,1.15,.4),u),vl(V(1.1,1.1,1.3),V(1.2,.95,1),u),lerp(38,30,u)); } }
+  else if(t<31){ u=ease(seg(t,24,31)); setCam(vl(V(.7,1.25,1.5),V(.7,1.05,1.25),u),V(.7,.82,.92),lerp(38,36,u)); }               // S5 phone
+  else if(t<38){ u=seg(t,31,38); setCam(vl(V(.3,1.1,1),V(.1,1.25,-.9),ease(u)),V(0,1.4,-14.5),lerp(30,24,u)); }                 // S6 creep
+  else if(t<45){ u=seg(t,38,45); setCam(vl(V(.1,1.3,-1),V(0,1.5,-7.5),ease(u)),V(0,1.55,-14.5),lerp(24,19,u)); }                // S7 push on figure
+  else if(t<51){                                                                                                                  // S8 top-down → tilt up
+    const a=ease(seg(t,45,49)), b=ease(seg(t,49,51));
+    setCam(vl(vl(V(.7,1.4,1.05),V(.7,1.3,1.05),a),V(1.2,1.3,.1),b),vl(V(.7,.82,.9),V(1.2,1.45,1.4),b),lerp(34,40,b)); }
+  else if(t<56){                                                                                                                  // S9 phone → closet
+    const pa=ease(seg(t,51,54.5)), pb=ease(seg(t,54.5,56)), la=ease(seg(t,52.4,54.6));
+    const p=vl(vl(V(.8,1.1,1.15),V(.4,1.3,1.15),pa),V(-.2,1.45,1.2),pb);
+    setCam(p,vl(V(.7,.82,.9),V(cFace.position.x,1.58,1.2),la),lerp(40,30,la)-2*pb); }
+  else {                                                                                                                          // S10 SNAP ZOOM
+    u=ease(seg(t,56,56.28)); const creep=seg(t,56.28,58);
+    setCam(V(lerp(-.2,-1.35,u)-.08*creep,lerp(1.45,1.6,u),1.2),V(cFace.position.x,1.58,1.2),lerp(28,50,u)); }
+}
+function applyCamera(t){
+  let sh=.003+(t>=56&&t<57?.03*Math.exp(-(t-56)*5):0)+(t>=44.2&&t<44.7?.01:0);
+  const j=(a,b)=>Math.sin(t*a)+.6*Math.sin(t*b+1.7);
+  camera.position.set(cam.p.x+sh*j(9.1,17.3),cam.p.y+sh*j(8.3,15.1),cam.p.z+sh*j(7.7,13.9)*.5);
+  camera.fov=cam.fov; camera.updateProjectionMatrix(); camera.up.set(0,1,0);
+  camera.lookAt(cam.l.x+sh*.4*j(5.1,11.3),cam.l.y+sh*.4*j(6.1,10.3),cam.l.z);
+  camera.rotateZ(cam.roll+sh*.5*j(4.3,9.7));
+  underLight.position.set(camera.position.x,camera.position.y-.25,camera.position.z);
+}
+
+/* ============ WORLD ANIMATION ============ */
+function flick(t){
+  const k=Math.floor(t*14), h=hash(k);
+  const heavy=t<31?.03:t<38?.12:t<43?.2:t<44.7?.5:0;
+  let m=1; if(h<heavy) m=.1+.6*hash(k+99);
+  if(t>=44.7&&t<45) m=0; return m;
+}
+function updateWorld(t){
+  // clock
+  const cf=t<10?.55+.45*hash(Math.floor(t*18)):1; clockMat.color.setScalar(cf); clockLight.intensity=.5*cf;
+  // Michael
+  const sit=ease(seg(t,16.2,17)); mPivot.visible=t<51;
+  mPivot.rotation.x=Math.PI/2*(1-sit); mPivot.position.y=.78+.004*Math.sin(t*1.8);
+  mHead.rotation.y=.9*ease(seg(t,10,12))*(1-sit)+.3*sit;
+  for(const eg of mHead.userData.eyes) eg.scale.setScalar(1+.45*seg(t,6,10));
+  const tr=(t>=17&&t<24)?.008:.0015, r=()=>(Math.random()-.5)*tr;
+  handL.position.set(lerp(-.19,-.17,sit)+r(),lerp(.25,.06,sit)+r(),lerp(-.21,-.34,sit)+r());
+  handR.position.set(lerp(.19,.17,sit)+r(),lerp(.25,.06,sit)+r(),lerp(-.21,-.34,sit)+r());
+  // kitchen figure
+  const turn=ease(seg(t,41.3,42.5));
+  fig.head.rotation.y=Math.PI*turn; fig.head.rotation.z=.45+.05*Math.sin(t*1.3);
+  fig.eyes.forEach(e=>e.visible=turn>.85);
+  fig.g.position.z=-14.5+(t>43?1.1*seg(t,43,45):0);
+  const m=flick(t); kLight.intensity=25*m; fixM.color.setScalar(.15+.85*m);
+  shadowFig.g.visible=(t>=49.7&&t<50)||(t>=50.3&&t<51);
+  // closet
+  closetHinge.rotation.y=1.9*ease(seg(t,52.4,55.2));
+  cFace.visible=cBody.visible=t>=52.4;
+  cFace.position.x=lerp(-2.28,-2.05,ease(seg(t,54.3,56)));
+  cFace.rotation.z=t>56.3?.1*Math.sin(t*37):0; cFace.rotation.y=-Math.PI/2+(t>56.3?.07*Math.sin(t*53):0);
+  closetLight.intensity=.6*ease(seg(t,53.8,55.8))+(t>=56&&t<58?.5:0);
+  underLight.intensity=(t>=56&&t<58)?.25:0;
+  // phone
+  const st=phoneState(t); if(t>=23.9&&t<58.1) drawPhone(st,t);
+  phoneLight.intensity=st.on?.3*(.95+.05*Math.random()):0;
+}
+
+/* ============ POST / COMPOSITE ============ */
+const CAPS=[
+ [.3,3.9,'At {1:45 AM}, Michael heard someone calling his name… from the {kitchen}.'],
+ [4.2,9.8,'He thought it was his dad. But his father was away… on a {business trip}.'],
+ [10.2,13.6,'Then he heard something… that made his blood run {cold}.'],
+ [13.8,16.9,'It was his {own voice}.'],
+ [17.1,21.2,'“Michael… don’t come in here.”'],
+ [21.3,23.9,'He {froze}.'],
+ [24.2,26.4,'Suddenly, his phone lit up. An {unknown number}.'],
+ [26.6,30.9,'“Whatever happens… don’t let the person in the kitchen know you’re {awake}.”'],
+ [31.2,37.9,'Michael slowly… looked toward the {kitchen}.'],
+ [38.2,40.9,'Then the voice whispered…'],
+ [41,44.8,'“I know you’re {reading that}.”'],
+ [45.2,50.4,'Then his phone buzzed… one last time.'],
+ [51.2,55.9,'“Michael… I’m in your {bedroom}.”'],
+ [56.3,58,'{Now you’re awake.}']
+];
+const TOPS=[[0,3.8,'1:45 AM',130,'#ff2a1a','"Courier New",monospace',true],[4.5,9.5,'Dad: Away until Sunday ✈',58,'#e8e8e8','Arial,sans-serif',false],[11,16.5,'That was HIS voice.',66,'#ff2a1a','Impact,Arial,sans-serif',true]];
+const GL=[.2,3.85,10.1,16.8,24.05,24.5,44.2,44.45,45.02,50.5,56,56.3];
+const glitch=t=>{let g=0;for(const e of GL) if(t>=e&&t-e<.7) g=Math.max(g,Math.exp(-(t-e)*7));return g;};
+
+function parse(text){const ch=[];let red=false;for(const x of text){if(x==='{'){red=true;continue;}if(x==='}'){red=false;continue;}ch.push({c:x,red});}
+  const words=[];let cur=[];for(const x of ch){if(x.c===' '){if(cur.length)words.push(cur);cur=[];}else cur.push(x);}if(cur.length)words.push(cur);return words;}
+function drawRich(text,cx,cy,size,maxW,scale=1,alpha=1){
+  ctx.save(); ctx.translate(cx,cy); ctx.scale(scale,scale); ctx.globalAlpha=alpha;
+  ctx.font=`900 ${size}px Impact,"Arial Black",Arial,sans-serif`; ctx.textBaseline='middle'; ctx.textAlign='left';
+  const words=parse(text), sp=ctx.measureText(' ').width, wW=w=>w.reduce((s,k)=>s+ctx.measureText(k.c).width,0);
+  const lines=[];let cur=[],cw=0;
+  for(const w of words){const ww=wW(w);if(cur.length&&cw+sp+ww>maxW){lines.push({w:cur,width:cw});cur=[];cw=0;}cw+=(cur.length?sp:0)+ww;cur.push(w);}
+  lines.push({w:cur,width:cw});
+  const lh=size*1.18; ctx.lineJoin='round'; ctx.lineWidth=size*.16; ctx.strokeStyle='#000';
+  for(const pass of[0,1]){ let y=-(lines.length-1)*lh/2;
+    for(const L of lines){let x=-L.width/2;L.w.forEach((w,i)=>{if(i)x+=sp;for(const k of w){const kw=ctx.measureText(k.c).width;
+      if(pass===0)ctx.strokeText(k.c,x,y);else{ctx.fillStyle=k.red?'#ff2b2b':'#f4f4f4';ctx.fillText(k.c,x,y);}x+=kw;}});y+=lh;} }
+  ctx.restore();
+}
+const vig=document.createElement('canvas'); vig.width=W; vig.height=H;
+{const v=vig.getContext('2d'),g=v.createRadialGradient(W/2,H/2,H*.22,W/2,H/2,H*.72);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,.92)');v.fillStyle=g;v.fillRect(0,0,W,H);}
+const noisePats=[...Array(4)].map(()=>{const n=document.createElement('canvas');n.width=n.height=256;const x=n.getContext('2d'),id=x.createImageData(256,256);
+  for(let i=0;i<id.data.length;i+=4){const v=Math.random()*255;id.data[i]=id.data[i+1]=id.data[i+2]=v;id.data[i+3]=255;}x.putImageData(id,0,0);return ctx.createPattern(n,'repeat');});
+
+function compose(t){
+  const g=glitch(t), gl=renderer.domElement;
+  ctx.globalCompositeOperation='source-over'; ctx.globalAlpha=1;
+  ctx.filter=`brightness(${GAIN}) contrast(1.12) saturate(.7)`; ctx.drawImage(gl,0,0,W,H); ctx.filter='none';
+  if(g>.04){
+    for(let i=0,n=2+Math.floor(g*7);i<n;i++){const y=Math.random()*H,h=10+Math.random()*140,dx=(Math.random()-.5)*160*g;ctx.drawImage(out,0,y,W,h,dx,y,W,h);}
+    ctx.globalCompositeOperation='screen'; ctx.globalAlpha=Math.min(.4,g*.5); ctx.drawImage(gl,g*26,0,W,H);
+    ctx.globalAlpha=g*.12; ctx.fillStyle='#f00'; ctx.fillRect(0,0,W,H);
+    ctx.globalCompositeOperation='source-over'; ctx.globalAlpha=1;
+  }
+  ctx.drawImage(vig,0,0);
+  ctx.globalCompositeOperation='overlay'; ctx.globalAlpha=.16; ctx.save(); ctx.translate(Math.random()*256,Math.random()*256);
+  ctx.fillStyle=noisePats[Math.floor(Math.random()*4)]; ctx.fillRect(-256,-256,W+256,H+256); ctx.restore();
+  ctx.globalCompositeOperation='source-over'; ctx.globalAlpha=1;
+
+  if(t<58){
+    for(const [a,b,txt,size,col,font,jit] of TOPS) if(t>=a&&t<b){
+      ctx.save(); ctx.font=`bold ${size}px ${font}`; ctx.textAlign='center'; ctx.fillStyle=col; ctx.shadowColor=col; ctx.shadowBlur=30;
+      const jx=jit&&Math.random()<.15?(Math.random()-.5)*14:0; ctx.fillText(txt,W/2+jx,H*.16); ctx.restore();
+    }
+    for(const [a,b,txt] of CAPS) if(t>=a&&t<b){
+      const al=Math.min(1,(t-a)/.1,(b-t)/.12), pop=1+.12*Math.max(0,1-(t-a)/.18);
+      drawRich(txt,W/2,H*.68,74,900,pop,al);
+    }
+  }
+  if(t>=56&&t<56.12){ctx.fillStyle=`rgba(255,255,255,${.85*(1-(t-56)/.12)})`;ctx.fillRect(0,0,W,H);}
+  if(t<.25){ctx.fillStyle=`rgba(0,0,0,${1-t/.25})`;ctx.fillRect(0,0,W,H);}
+  if(t>=58){ ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H);
+    if(t>=58.3){ctx.save();ctx.font='bold 76px Arial,sans-serif';ctx.textAlign='center';ctx.fillStyle=`rgba(255,255,255,${Math.min(1,(t-58.3)/.4)})`;ctx.fillText("Don't look behind you.",W/2,H*.5);ctx.restore();} }
+}
+
+/* ============ AUDIO (procedural) ============ */
+let AC,master,revBus,streamDest,noiseBuf,T0;
+function outNode(pan,send){const g=AC.createGain();let last=g;if(pan){const p=AC.createStereoPanner();p.pan.value=pan;g.connect(p);last=p;}
+  last.connect(master);if(send){const s=AC.createGain();s.gain.value=send;last.connect(s);s.connect(revBus);}return g;}
+function tone(o){const{type='sine',f=440,f2,t,dur=1,vol=.2,a=.01,pan=0,send=0,lp,hp}=o;const s=T0+t,osc=AC.createOscillator();osc.type=type;
+  osc.frequency.setValueAtTime(f,s);if(f2)osc.frequency.exponentialRampToValueAtTime(f2,s+dur);let node=osc;
+  if(lp){const F=AC.createBiquadFilter();F.type='lowpass';F.frequency.value=lp;node.connect(F);node=F;}
+  if(hp){const F=AC.createBiquadFilter();F.type='highpass';F.frequency.value=hp;node.connect(F);node=F;}
+  const g=outNode(pan,send);node.connect(g);g.gain.setValueAtTime(0,s);g.gain.linearRampToValueAtTime(vol,s+a);g.gain.exponentialRampToValueAtTime(.0001,s+dur);osc.start(s);osc.stop(s+dur+.05);}
+function noise(o){const{t,dur=.5,vol=.2,ftype='bandpass',f=1000,f2,q=1,a=.01,pan=0,send=0}=o;const s=T0+t,src=AC.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+  const F=AC.createBiquadFilter();F.type=ftype;F.frequency.setValueAtTime(f,s);if(f2)F.frequency.exponentialRampToValueAtTime(f2,s+dur);F.Q.value=q;
+  src.connect(F);const g=outNode(pan,send);F.connect(g);g.gain.setValueAtTime(0,s);g.gain.linearRampToValueAtTime(vol,s+a);g.gain.exponentialRampToValueAtTime(.0001,s+dur);src.start(s,Math.random());src.stop(s+dur+.05);}
+function sustain({type='sine',f,t0,t1,vol,lp,hp}){const s=T0+t0,e=T0+t1,o=AC.createOscillator();o.type=type;o.frequency.value=f;let n=o;
+  if(lp){const F=AC.createBiquadFilter();F.type='lowpass';F.frequency.value=lp;n.connect(F);n=F;} if(hp){const F=AC.createBiquadFilter();F.type='highpass';F.frequency.value=hp;n.connect(F);n=F;}
+  const g=outNode(0,0);n.connect(g);g.gain.setValueAtTime(0,s);g.gain.linearRampToValueAtTime(vol,s+.4);g.gain.setValueAtTime(vol,e-.1);g.gain.linearRampToValueAtTime(0,e);o.start(s);o.stop(e+.1);}
+const whisper=(t,dur,pan,vol,f)=>noise({t,dur,vol:vol*2.5,f,q:2,a:dur*.35,pan,send:.7});
+const creak=(t,dur,f0,f1)=>{tone({type:'sawtooth',f:f0,f2:f1,t,dur,vol:.1,a:dur*.3,lp:500,send:.3});noise({t,dur,vol:.2,f:350,f2:700,q:9,a:dur*.3,send:.3});};
+const thump=(t,v)=>{tone({f:70,f2:35,t,dur:.18,vol:v,a:.005});tone({f:60,f2:32,t:t+.2,dur:.16,vol:v*.7,a:.005});};
+const buzz=t=>{for(let k=0;k<6;k++)tone({type:'square',f:170,t:t+k*.14,dur:.09,vol:.16,lp:700,a:.005});};
+const ding=t=>{tone({f:1568,t,dur:1.2,vol:.18,send:.9});tone({f:2093,t,dur:1.2,vol:.1,send:.9});};
+function riser(t0,t1,freqs,mult,vol){for(const f of freqs){const s=T0+t0,e=T0+t1,o=AC.createOscillator();o.type='sawtooth';o.frequency.setValueAtTime(f,s);o.frequency.exponentialRampToValueAtTime(f*mult,e);
+  const F=AC.createBiquadFilter();F.type='lowpass';F.frequency.setValueAtTime(500,s);F.frequency.exponentialRampToValueAtTime(3000,e);const g=outNode(0,.4);o.connect(F);F.connect(g);
+  g.gain.setValueAtTime(0,s);g.gain.linearRampToValueAtTime(vol,e-.05);g.gain.linearRampToValueAtTime(0,e);
+  const lfo=AC.createOscillator();lfo.frequency.value=5.5;const lg=AC.createGain();lg.gain.value=f*.01;lfo.connect(lg);lg.connect(o.frequency);lfo.start(s);lfo.stop(e+.1);o.start(s);o.stop(e+.1);}}
+function scream(t,dur){const s=T0+t,o=AC.createOscillator();o.type='sawtooth';o.frequency.setValueAtTime(700,s);o.frequency.linearRampToValueAtTime(1500,s+.4);o.frequency.linearRampToValueAtTime(900,s+dur);
+  const ws=AC.createWaveShaper(),cv=new Float32Array(256);for(let i=0;i<256;i++)cv[i]=Math.tanh((i/128-1)*6);ws.curve=cv;
+  const bp=AC.createBiquadFilter();bp.type='bandpass';bp.frequency.value=1400;bp.Q.value=1.2;const g=outNode(0,.3);o.connect(ws);ws.connect(bp);bp.connect(g);
+  g.gain.setValueAtTime(0,s);g.gain.linearRampToValueAtTime(.5,s+.03);g.gain.linearRampToValueAtTime(0,s+dur);
+  const lfo=AC.createOscillator();lfo.frequency.value=12;const lg=AC.createGain();lg.gain.value=60;lfo.connect(lg);lg.connect(o.frequency);lfo.start(s);lfo.stop(s+dur);o.start(s);o.stop(s+dur+.05);}
+function drone(){
+  const g=AC.createGain(),lp=AC.createBiquadFilter();lp.type='lowpass';lp.frequency.value=240;lp.connect(g);g.connect(master);
+  const fp=[[0,41],[10,48],[24,52],[38,44],[55.9,62]];
+  for(const[ty,m]of[['sawtooth',1],['sawtooth',1.012],['sine',2],['triangle',.5]]){
+    const o=AC.createOscillator();o.type=ty;o.connect(lp);o.frequency.setValueAtTime(fp[0][1]*m,T0);
+    for(const[t,f]of fp.slice(1))o.frequency.linearRampToValueAtTime(f*m,T0+t);o.start(T0);o.stop(T0+61);}
+  const pts=[[0,0],[2,.11],[9.5,.15],[10,.015],[12,.05],[17,.07],[23.9,.1],[31,.15],[37.9,.16],[38.1,.03],[43,.07],[44.8,.12],[44.95,0],[51,0],[51.01,.05],[55.9,.17],[56,0]];
+  g.gain.setValueAtTime(0,T0);for(const[t,v]of pts)g.gain.linearRampToValueAtTime(v,T0+t);
+}
+function buildAudio(){
+  drone();
+  for(let i=0;i<10;i++){noise({t:.5+i,dur:.04,vol:.28,ftype:'highpass',f:3200,q:.7,a:.001,pan:-.5});tone({type:'square',f:i%2?900:700,t:.5+i,dur:.02,vol:.03,a:.001,pan:-.5});}
+  whisper(.6,1.3,-.7,.35,2300); whisper(10.4,1.3,.5,.5,900); whisper(17.3,1.5,0,.5,1800);
+  whisper(41,1.6,-.3,.55,1800); whisper(41.15,1.6,.3,.45,600); whisper(58.7,1.2,0,.5,2000);
+  tone({type:'triangle',f:164.8,t:5,dur:4,vol:.12,send:.6}); tone({type:'triangle',f:170,t:5,dur:4,vol:.1,send:.6});
+  creak(6.5,.9,100,70); creak(8.3,.7,90,120); creak(20,.8,70,95); creak(33,1.2,80,60); creak(52.4,2.8,110,190);
+  let hb=10; while(hb<44.6){const p=lerp(1.05,.55,(hb-10)/35);thump(hb,hb<17?.25:hb<24?.45:hb<31?.3:.4);hb+=p;}
+  for(let b=52;b<55.9;b+=.42)thump(b,.5);
+  tone({f:50,f2:26,t:44.75,dur:.7,vol:1}); noise({t:44.75,dur:.4,vol:.5,ftype:'lowpass',f:300,a:.002});
+  sustain({f:7800,t0:17.2,t1:23.95,vol:.015});
+  buzz(24); ding(24.5); buzz(45); buzz(50.5); ding(51);
+  riser(24,31,[220,261.6,311.1],1.25,.05);
+  for(let i=0;i<3;i++)noise({t:33.5+i*2,dur:1.4,vol:.25,ftype:'lowpass',f:500,a:.5,send:.3});
+  sustain({f:60,t0:31,t1:44.9,vol:.05}); sustain({f:120,t0:31,t1:44.9,vol:.025});
+  sustain({type:'sawtooth',f:100,t0:31,t1:44.9,vol:.012,hp:1500});
+  for(let k=0;45.4+k*.45<50.4;k++)tone({f:640,t:45.4+k*.45,dur:.05,vol:.06,a:.002,pan:.2});
+  for(let k=0;45.6+k*1.5<50.5;k++)noise({t:45.6+k*1.5,dur:.9,vol:.25,ftype:'lowpass',f:800,a:.3});
+  riser(51,56,[880,932,1318],1.6,.04);
+  tone({f:45,f2:25,t:56,dur:1.3,vol:1}); noise({t:56,dur:.8,vol:.9,ftype:'lowpass',f:3000,f2:120,q:.7,a:.002}); scream(56,2);
+}
+function setupAudio(){
+  AC=new(window.AudioContext||window.webkitAudioContext)(); AC.resume();
+  const comp=AC.createDynamicsCompressor(); master=AC.createGain(); master.gain.value=.9; master.connect(comp); comp.connect(AC.destination);
+  streamDest=AC.createMediaStreamDestination(); comp.connect(streamDest);
+  const conv=AC.createConvolver(),len=AC.sampleRate*3,b=AC.createBuffer(2,len,AC.sampleRate);
+  for(let ch=0;ch<2;ch++){const d=b.getChannelData(ch);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.5);}
+  conv.buffer=b; revBus=AC.createGain(); revBus.connect(conv); const rg=AC.createGain(); rg.gain.value=.6; conv.connect(rg); rg.connect(master);
+  noiseBuf=AC.createBuffer(1,AC.sampleRate*2,AC.sampleRate); const d=noiseBuf.getChannelData(0); for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+  T0=AC.currentTime+.15; buildAudio();
+}
+
+/* ============ NARRATION (browser TTS) ============ */
+const SPEECH=[[.6,'At one forty-five A.M., Michael heard someone calling his name... from the kitchen.'],[4.3,'He thought it was his dad. But his father was away... on a business trip.'],
+[10.3,'Then he heard something... that made his blood run cold. It was his own voice.'],[17.2,'Michael... don\'t come in here. He froze.'],
+[24.3,'Suddenly, his phone lit up. An unknown number.'],[26.6,'Whatever happens... don\'t let the person in the kitchen know you\'re awake.'],
+[31.3,'Michael slowly... looked toward the kitchen.'],[38.3,'Then the voice whispered...'],[40.8,'I know you\'re reading that.'],
+[45.3,'Then his phone buzzed... one last time.'],[51.5,'Michael... I\'m in your bedroom.'],[56.4,'Now you\'re awake.']];
+let voices=[]; if('speechSynthesis' in window){voices=speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>voices=speechSynthesis.getVoices();}
+function speak(text){ if(!useVoice.checked||!('speechSynthesis' in window))return; speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text); u.rate=.82; u.pitch=.55;
+  const v=voices.find(v=>/^en/i.test(v.lang)&&/male|daniel|david|alex|fred/i.test(v.name))||voices.find(v=>/^en/i.test(v.lang)); if(v)u.voice=v; speechSynthesis.speak(u); }
+
+/* ============ PLAYBACK + RECORDING ============ */
+let startMs=0,playing=false,speechIdx=0,recorder=null,chunks=[];
+function startRecording(){
+  const ms=new MediaStream([...out.captureStream(30).getVideoTracks(),...streamDest.stream.getAudioTracks()]);
+  const mime=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(m=>MediaRecorder.isTypeSupported(m));
+  recorder=new MediaRecorder(ms,{mimeType:mime,videoBitsPerSecond:10e6}); chunks=[];
+  recorder.ondataavailable=e=>e.data.size&&chunks.push(e.data);
+  recorder.onstop=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(chunks,{type:'video/webm'}));a.download='1-45AM-horror-short.webm';a.click();};
+  recorder.start();
+}
+function start(record){
+  menu.style.display='none'; setupAudio(); startMs=performance.now()+150; speechIdx=0; playing=true;
+  if(record) startRecording(); requestAnimationFrame(frame);
+}
+function finish(){
+  playing=false; if('speechSynthesis' in window)speechSynthesis.cancel();
+  if(recorder&&recorder.state!=='inactive')setTimeout(()=>recorder.stop(),300); recorder=null;
+  setTimeout(()=>AC.close(),700); menu.style.display='flex'; document.getElementById('bPlay').textContent='↻ Replay';
+}
+function frame(){
+  if(!playing)return;
+  const real=Math.max(0,(performance.now()-startMs)/1000), t=Math.min(real,DURATION-.001);
+  while(speechIdx<SPEECH.length&&real>=SPEECH[speechIdx][0]){speak(SPEECH[speechIdx][1]);speechIdx++;}
+  updateWorld(t); updateCamera(t); applyCamera(t); renderer.render(scene,camera); compose(t);
+  if(real>=DURATION){finish();return;}
+  requestAnimationFrame(frame);
+}
+document.getElementById('bPlay').onclick=()=>start(false);
+document.getElementById('bRec').onclick=()=>start(true);
+// idle preview frame
+updateWorld(0);updateCamera(0);applyCamera(0);renderer.render(scene,camera);compose(1);
+</script>
+</body>
+</html>
